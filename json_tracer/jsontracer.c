@@ -128,7 +128,7 @@ static void insertRecordInstr(void *drcontext, instrlist_t *bb, instr_t *instr) 
 
     savePC(cont);
     saveOpcode(cont);
-    saveOperands(cont);
+    saveOperands(&cont);
 
     addStorePointer(cont, regSegmentBase, offset);
     destroyInstructionContext(cont);
@@ -146,22 +146,45 @@ static void outputInstr(void *drcontext) {
     for (traceEntry *curr = data->buf; curr < buf; curr++) {
         fprintf(data->file, "PC: %lu, Opcode %s - Operands: ", curr->pc, decode_opcode_name((int)curr->opcode));
         for (int i = 0; i < curr->numVals; i++) {
-            const char *prefixName;
             switch (curr->vals[i].type) {
                 case (uint64_t)reg:
-                    prefixName = "Reg";
+                    fprintf(data->file, "Reg %s: %lx, ", (char *)curr->vals[i].val.reg.name,
+                                                         curr->vals[i].val.reg.val);
                     break;
 
                 case (uint64_t)imm:
-                    prefixName = "Imm";
+                    fprintf(data->file, "Imm: %lx, ", curr->vals[i].val.imm.val);
+                    break;
+
+                case (uint64_t)mem:
+                    fprintf(data->file, "%s Absolute Memory Address %lx: %lx, ",
+                        curr->vals[i].val.mem.isFar ? "Far" : "Near",
+                        curr->vals[i].val.mem.addr, curr->vals[i].val.mem.val);
+                    break;
+
+                case (uint64_t)indir:
+                    fprintf(data->file, "%s Indirect ", curr->vals[i].val.indir.isFar ? "Far" : "Near");
+
+                    if (curr->vals[i].val.indir.baseNull) {
+                        fprintf(data->file, "No Base + ");
+                    } else {
+                        fprintf(data->file, "Base %s (%lx) + ", 
+                            (char *)curr->vals[i].val.indir.baseName,
+                            curr->vals[i].val.indir.baseVal);
+                    }
+
+                    fprintf(data->file, "Offset %lx: ", curr->vals[i].val.indir.disp);
+                    
+                    if(curr->vals[i].val.indir.valNull) {
+                        fprintf(data->file, "No value read, ");
+                    } else {
+                        fprintf(data->file, "%lx, ", curr->vals[i].val.indir.val);
+                    }
                     break;
 
                 default:
-                    prefixName = "Unknown Type";
                     break;
             }
-
-            fprintf(data->file, "%s: %lu, ", prefixName, curr->vals[i].val);
         }
         fprintf(data->file, "\n");
     }

@@ -8,13 +8,46 @@
 #include <inttypes.h>
 
 typedef enum {
+    unknown,
     reg,
-    imm
+    imm,
+    mem,
+    indir
 } valueType;
 
 typedef struct {
-    uint64_t type;
+    uint64_t name;
     uint64_t val;
+} registerValue;
+
+typedef struct {
+    uint64_t val;
+} immediateValue;
+
+typedef struct {
+    uint64_t isFar;
+    uint64_t addr;
+    uint64_t val;
+} memoryValue;
+
+typedef struct {
+    uint64_t isFar;
+    uint64_t baseNull;
+    uint64_t baseName;
+    uint64_t baseVal;
+    uint64_t disp;
+    uint64_t valNull;
+    uint64_t val;
+} indirectValue;
+
+typedef struct {
+    uint64_t type;
+    union {
+        registerValue reg;
+        immediateValue imm;
+        memoryValue mem;
+        indirectValue indir;
+    } val;
 } operandValue;
 
 #define VALS_LEN 32
@@ -82,5 +115,5 @@ void saveOpcode(instructionContext cont);
 /*
  * Saves operand values of the following instruction
  */
-void saveOperands(instructionContext cont);
+void saveOperands(instructionContext *cont);
 #endif
