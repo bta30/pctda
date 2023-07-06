@@ -8,7 +8,7 @@ if (NOT DynamoRIO_FOUND)
     message(FATAL_ERROR "Unable to find DynamoRIO - please set DynamoRIO_DIR")
 endif (NOT DynamoRIO_FOUND)
 
-add_library(jsontracer SHARED tracer.c insertInstructions.c jsonout.c)
+add_library(jsontracer SHARED tracer.c insert_instrumentation.c json_writer.c)
 configure_DynamoRIO_client(jsontracer)
 use_DynamoRIO_extension(jsontracer "drmgr")
 use_DynamoRIO_extension(jsontracer "drreg")
