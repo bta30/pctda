@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include "insertInstructions.h"
+#include "jsonout.h"
 
 #include <stdio.h>
 
@@ -11,8 +12,7 @@
 typedef struct {
     byte *segmentBase;
     traceEntry *buf;
-    file_t fileHandle;
-    FILE *file;
+    jsonTrace traceFile;
 } threadData;
 
 reg_id_t regSegmentBase;
@@ -92,15 +92,13 @@ static void event_thread_init(void *drcontext) {
     data->buf = dr_raw_mem_alloc(BUF_SIZE, DR_MEMPROT_READ | DR_MEMPROT_WRITE, NULL);
     *(traceEntry **)(data->segmentBase  + offset) = data->buf;
     
-    data->fileHandle = log_file_open(0, drcontext, "./", "jsontracer", DR_FILE_ALLOW_LARGE);
-    data->file = log_stream_from_file(data->fileHandle);
-    fprintf(data->file, "Opened file\n");
+    data->traceFile = createTraceFile();
 }
 
 static void event_thread_exit(void *drcontext) {
     outputInstr(drcontext);
     threadData *data = drmgr_get_tls_field(drcontext, tlsSlot);
-    log_stream_close(data->file);
+    destroyTraceFile(data->traceFile);
     dr_raw_mem_free(data->buf, BUF_SIZE);
     dr_thread_free(drcontext, data, sizeof(threadData));
 }
@@ -144,49 +142,7 @@ static void outputInstr(void *drcontext) {
     traceEntry *buf = *(traceEntry **)(data->segmentBase + offset);
 
     for (traceEntry *curr = data->buf; curr < buf; curr++) {
-        fprintf(data->file, "PC: %lu, Opcode %s - Operands: ", curr->pc, decode_opcode_name((int)curr->opcode));
-        for (int i = 0; i < curr->numVals; i++) {
-            switch (curr->vals[i].type) {
-                case (uint64_t)reg:
-                    fprintf(data->file, "Reg %s: %lx, ", (char *)curr->vals[i].val.reg.name,
-                                                         curr->vals[i].val.reg.val);
-                    break;
-
-                case (uint64_t)imm:
-                    fprintf(data->file, "Imm: %lx, ", curr->vals[i].val.imm.val);
-                    break;
-
-                case (uint64_t)mem:
-                    fprintf(data->file, "%s Absolute Memory Address %lx: %lx, ",
-                        curr->vals[i].val.mem.isFar ? "Far" : "Near",
-                        curr->vals[i].val.mem.addr, curr->vals[i].val.mem.val);
-                    break;
-
-                case (uint64_t)indir:
-                    fprintf(data->file, "%s Indirect ", curr->vals[i].val.indir.isFar ? "Far" : "Near");
-
-                    if (curr->vals[i].val.indir.baseNull) {
-                        fprintf(data->file, "No Base + ");
-                    } else {
-                        fprintf(data->file, "Base %s (%lx) + ", 
-                            (char *)curr->vals[i].val.indir.baseName,
-                            curr->vals[i].val.indir.baseVal);
-                    }
-
-                    fprintf(data->file, "Offset %lx: ", curr->vals[i].val.indir.disp);
-                    
-                    if(curr->vals[i].val.indir.valNull) {
-                        fprintf(data->file, "No value read, ");
-                    } else {
-                        fprintf(data->file, "%lx, ", curr->vals[i].val.indir.val);
-                    }
-                    break;
-
-                default:
-                    break;
-            }
-        }
-        fprintf(data->file, "\n");
+        writeTraceEntry(&data->traceFile, *curr);
     }
 
     *(traceEntry **)(data->segmentBase + offset) = data->buf;

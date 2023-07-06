@@ -170,6 +170,8 @@ static void saveOpnd(instructionContext *cont, opnd_t opnd, int *numVals) {
         if (opcodeFirstLetter != 'p') {
             writeValue(*cont, 1, offsetof(traceEntry, vals[*numVals].val.indir.valNull));
         } else {
+            writeValue(*cont, 0, offsetof(traceEntry, vals[*numVals].val.indir.valNull));
+
             instrlist_meta_preinsert(cont->instrs, cont->nextInstr,
                 XINST_CREATE_load(cont->drcontext, opnd_create_reg(cont->regVal), opnd));
             insertStore(*cont, opnd_create_reg(cont->regVal),
