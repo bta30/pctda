@@ -1,4 +1,14 @@
+#include <string.h>
+
+#include "dr_api.h"
+#include "drsyms.h"
+
 #include "insert_instrumentation.h"
+
+typedef struct {
+    byte *segmBase;
+    trace_entry_t *buf;
+} thread_data_t;
 
 typedef struct {
     void *drcontext;
@@ -114,27 +124,54 @@ static void ensureNotUsing(add_instr_context_t *cont, reg_id_t reg1,
  */
 static void move(add_instr_context_t cont, reg_id_t dst, reg_id_t src);
 
+/*
+ * Inserts saving a call instruction
+ */
+static void saveCall(add_instr_context_t *cont);
+
+/*
+ * Saves a direct call
+ */
+static void saveDirCall(app_pc instrAddr, app_pc targetAddr);
+
+/*
+ * Saves an indirect call
+ */
+static void saveIndirCall(app_pc instrAddr, app_pc targetAddr);
+
+/*
+ * Creates a target operand from the given target address
+ */
+static void createTargetOpnd(app_pc targetAddr, call_target_t *target);
+
 void instrContextInit() {
     drreg_options_t ops = {sizeof(ops), 3, false};
     drreg_init(&ops);
+    drsym_init(0);
 }
 
 void instrContextDeinit() {
     drreg_exit();
+    drsym_exit();
 }
 
 void insertInstrumentation(void *drcontext, instrlist_t *instrs,
                            instr_t *instr, reg_id_t regSegmBase, uint offset) {
 
     add_instr_context_t cont = createInstrContext(drcontext, instrs, instr);
-    loadPointer(cont, regSegmBase, offset);
 
-    savePC(cont);
-    saveOpcode(cont);
-    saveOperands(&cont);
+    if (instr_is_call(instr)) {
+        saveCall(&cont);
+    } else {
+        loadPointer(cont, regSegmBase, offset);
 
-    addPointer(cont, sizeof(trace_entry_t));
-    storePointer(cont, regSegmBase, offset);
+        savePC(cont);
+        saveOpcode(cont);
+        saveOperands(&cont);
+
+        addPointer(cont, sizeof(trace_entry_t));
+        storePointer(cont, regSegmBase, offset);
+    }
     destroyInstrContext(cont);
 }
 
@@ -389,4 +426,49 @@ static void move(add_instr_context_t cont, reg_id_t dst, reg_id_t src) {
         XINST_CREATE_move(cont.drcontext, opnd_create_reg(dst), 
                           opnd_create_reg(src)));
     
+}
+
+static void saveCall(add_instr_context_t *cont) {
+    switch (instr_get_opcode(cont->nextInstr)) {
+        case OP_call:
+            dr_insert_call_instrumentation(cont->drcontext, cont->instrs,
+                                           cont->nextInstr, saveDirCall);
+            break;
+    }
+}
+
+static void saveDirCall(app_pc instrAddr, app_pc targetAddr) {
+    void *drcontext = dr_get_current_drcontext();
+    thread_data_t *threadData = drmgr_get_tls_field(drcontext, tlsSlot);
+    trace_entry_t *entry = *(trace_entry_t **)(threadData->segmBase + offset);
+
+    entry->pc = (uint64_t)instrAddr;
+
+    instr_t instr;
+    decode(drcontext, instrAddr, &instr);
+    entry->opcode = instr_get_opcode(&instr);
+    entry->numVals = 1;
+
+    entry->vals[0].type = target;
+    createTargetOpnd(targetAddr, &entry->vals[0].val.target);
+
+    (*(trace_entry_t**)(threadData->segmBase + offset))++;
+}
+
+static void createTargetOpnd(app_pc targetAddr, call_target_t *target) {
+    target->pc = (uint64_t)targetAddr;
+
+    module_data_t *module = dr_lookup_module(targetAddr);
+                                                                                                               
+    drsym_info_t info;
+    info.struct_size = sizeof(info);
+                                                                                                               
+    info.name = target->name;
+    info.name_size = sizeof(target->name)/sizeof(target->name[0]);
+    target->name[0] = '\0';
+                                                                                                               
+    drsym_error_t symErr;
+    symErr = drsym_lookup_address(module->full_path,
+                                  targetAddr - module->start, &info,
+                                  DRSYM_DEMANGLE);
 }

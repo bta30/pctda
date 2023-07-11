@@ -8,7 +8,8 @@ typedef enum {
     reg,
     imm,
     mem,
-    indir
+    indir,
+    target
 } value_type_t;
 
 typedef struct {
@@ -37,12 +38,18 @@ typedef struct {
 } indirect_value_t;
 
 typedef struct {
+    uint64_t pc;
+    char name[64];
+} call_target_t;
+
+typedef struct {
     uint64_t type;
     union {
         register_value_t reg;
         immediate_value_t imm;
         memory_value_t mem;
         indirect_value_t indir;
+        call_target_t target;
     } val;
 } operand_value_t;
 
@@ -52,5 +59,13 @@ typedef struct {
     uint64_t numVals;
     operand_value_t vals[8];
 } trace_entry_t;
+
+extern reg_id_t regSegmBase;
+extern uint offset;
+extern int tlsSlot;
+
+extern reg_id_t regSegmBase;
+extern uint offset;
+extern int tlsSlot;
 
 #endif

@@ -36,6 +36,11 @@ static void writeMem(json_trace_t *traceFile, memory_value_t memVal);
 static void writeIndir(json_trace_t *traceFile, indirect_value_t indirVal);
 
 /*
+ * Writes a target operand entry
+ */
+static void writeTarget(json_trace_t *traceFile, call_target_t target);
+
+/*
  * Writes an null operand entry
  */
 static void writeNullOpnd(json_trace_t *traceFile);
@@ -103,6 +108,9 @@ static void writeOpnd(json_trace_t *traceFile, operand_value_t opndVal) {
             writeIndir(traceFile, opndVal.val.indir);
             break;
 
+        case (uint64_t) target:
+            writeTarget(traceFile, opndVal.val.target);
+
         default:
             writeNullOpnd(traceFile);
             break;
@@ -154,6 +162,11 @@ static void writeIndir(json_trace_t *traceFile, indirect_value_t indirVal) {
                 "\"value\": 0x%lx}",
                 indirVal.val);
     }
+}
+
+static void writeTarget(json_trace_t *traceFile, call_target_t target) {
+    fprintf(traceFile->file, "{\"type\": \"target\", \"pc\": 0x%lx, "
+            "\"name\": \"%s\"}", target.pc, target.name);
 }
 
 static void writeNullOpnd(json_trace_t *traceFile) {

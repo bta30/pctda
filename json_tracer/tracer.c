@@ -23,6 +23,16 @@ int tlsSlot;
 static void eventExit(void);
 
 /*
+ * Stores a user module in
+ */
+static void eventModuleLoad(void *drcontext, const module_data_t *info, bool loaded);
+
+/*
+ * 
+ */
+static void eventModuleUnload(void *drcontext, const module_data_t *info);
+
+/*
  * Allocates a buffer for the current thread
  */
 static void eventThreadInit(void *drcontext);
@@ -54,12 +64,15 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])  {
     instrContextInit();
 
     dr_register_exit_event(eventExit);
+    drmgr_register_module_load_event(eventModuleLoad);
+    drmgr_register_module_unload_event(eventModuleUnload);
     drmgr_register_thread_init_event(eventThreadInit);
     drmgr_register_thread_exit_event(eventThreadExit);
     drmgr_register_bb_instrumentation_event(NULL, eventInstr, NULL);
 
     tlsSlot = drmgr_register_tls_field();
     dr_raw_tls_calloc(&regSegmBase, &offset, 1, 0);
+
 }
 
 static void eventExit(void) {
@@ -69,9 +82,19 @@ static void eventExit(void) {
     drmgr_unregister_bb_insertion_event(eventInstr);
     drmgr_unregister_thread_exit_event(eventThreadExit);
     drmgr_unregister_thread_init_event(eventThreadInit);
+    drmgr_unregister_module_unload_event(eventModuleUnload);
+    drmgr_unregister_module_load_event(eventModuleLoad);
 
     instrContextDeinit();
     drmgr_exit();
+}
+
+static void eventModuleLoad(void *drcontext, const module_data_t *info, bool loaded) {
+    printf("Loading module: %s\n", info->full_path);
+}
+
+static void eventModuleUnload(void *drcontext, const module_data_t *info) {
+    printf("Unloading module: %s\n", info->full_path);
 }
 
 static void eventThreadInit(void *drcontext) {
@@ -96,6 +119,7 @@ static void eventThreadExit(void *drcontext) {
 static dr_emit_flags_t eventInstr(void *drcontext, void *tag,
     instrlist_t *instrs, instr_t *nextInstr, bool for_trace, bool translating,
     void *user_data) {
+
     if (!instr_is_app(nextInstr)) {
         return DR_EMIT_DEFAULT;
     }
