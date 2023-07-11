@@ -337,16 +337,17 @@ static void saveIndir(add_instr_context_t *cont, opnd_t opnd, int numVals) {
     // Save value
     reg_id_t index = reg_to_pointer_sized(opnd_get_index(opnd));
     ensureNotUsing(cont, base, index);
-    char opcodeFirstLetter = decode_opcode_name(instr_get_opcode(cont->nextInstr))[0];
-    bool validOpcode = opcodeFirstLetter == 'p';
+    bool validOpcode = instr_reads_memory(cont->nextInstr) && !isFar;
     
     loadValueImm(*cont, !validOpcode);
     storeValue(*cont, offsetof(trace_entry_t, vals[numVals].val.indir.valNull));
 
     if (validOpcode) {
+        opnd = opnd_create_base_disp(base, index, opnd_get_scale(opnd), disp, OPSZ_8);
         loadValueOpnd(*cont, opnd);
         storeReg(*cont, cont->regVal, 
                  offsetof(trace_entry_t, vals[numVals].val.indir.val));
+    } else {
     }
 }
 

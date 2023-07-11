@@ -1,5 +1,6 @@
 cxx = g++
-flags = -g -static
+#flags = -g -static
+flags = -g3
 
 sum: main.o args.o summariser.o
 	$(cxx) $(flags) main.o args.o summariser.o -o sum
