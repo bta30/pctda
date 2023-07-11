@@ -17,3 +17,24 @@ cd sum_program/
 make
 ./sum 2 table1.csv table2.csv table3.csv table4.csv
 ```
+
+## Proof of concept JSON code tracer client for DynamoRIO
+This performs a trace of a given executable, generating log files for each thread of one entry per instruction, containing:
+  - Program counter
+  - Opcode
+  - Instruction name
+  - Some operand values from immediately before executing the instruction:
+    - General purpose register operands (register name and value)
+    - Immediate operands (value)
+    - Absolute memory address operands (near/far, address, value)
+    - *Sometimes* relative memory address operands (near/far, base register name/value, displacement, value)
+
+To build and execute using the given example program, using `drrun` as in your DynamoRIO installation, perform:
+```
+cd json_tracer/
+mkdir build
+cd build
+cmake ..
+make
+drrun -c libjsontracer.so -- ../../sum_program/sum 2 ../../sum_program/table*
+```
