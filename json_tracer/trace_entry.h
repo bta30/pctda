@@ -40,6 +40,7 @@ typedef struct {
 typedef struct {
     uint64_t pc;
     char name[64];
+    void *sp;
 } call_target_t;
 
 typedef struct {
@@ -57,6 +58,7 @@ typedef struct {
     uint64_t pc;
     uint64_t opcode;
     uint64_t numVals;
+    uint64_t bp;
     operand_value_t vals[8];
 } trace_entry_t;
 

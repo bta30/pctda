@@ -2,11 +2,15 @@
 #define JSON_WRITER_H
 
 #include "trace_entry.h"
+#include "debug_info.h"
 
 typedef struct {
     file_t fileHandle;
     FILE *file;
     bool firstLine;
+
+    debug_info_t *info;
+    void *pc, *segmBase, *sp;
 } json_trace_t;
 
 /*

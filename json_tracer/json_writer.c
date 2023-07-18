@@ -1,7 +1,9 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "dr_api.h"
 #include "drx.h"
+#include "drsyms.h"
 
 #include "json_writer.h"
 
@@ -45,11 +47,21 @@ static void writeTarget(json_trace_t *traceFile, call_target_t target);
  */
 static void writeNullOpnd(json_trace_t *traceFile);
 
+/*
+ * Writes information for an identified variable
+ */
+static void writeVar(json_trace_t *traceFile, variable_info_t varInfo);
+
 json_trace_t createTraceFile() {
     json_trace_t traceFile;
     traceFile.fileHandle = getUniqueHandle();
     traceFile.file = fdopen(traceFile.fileHandle, "w");
     traceFile.firstLine = true;
+
+    module_data_t *mainModule = dr_get_main_module();
+    traceFile.info = getDebugInfo(mainModule->full_path);
+    traceFile.segmBase = mainModule->start;
+    dr_free_module_data(mainModule);
     
     fprintf(traceFile.file, "[\n");
 
@@ -59,17 +71,43 @@ json_trace_t createTraceFile() {
 void destroyTraceFile(json_trace_t traceFile) {
     fprintf(traceFile.file, "\n]");
 
+    destroyDebugInfo(traceFile.info);
+
     if (traceFile.file != NULL) {
         fclose(traceFile.file);
     }
 }
 
 void writeTraceEntry(json_trace_t *traceFile, trace_entry_t entry) {
+    module_data_t *module = dr_lookup_module((byte *)entry.pc);
+    size_t offset = (void *)entry.pc - (void *)module->start;
+
+    drsym_info_t info;
+    char name[512], file[512];
+    info.struct_size = sizeof(info);
+    info.name = name;
+    info.name_available_size = sizeof(name);
+    info.file = file;
+    info.file_size = sizeof(file);
+    drsym_lookup_address(module->full_path, offset, &info, DRSYM_DEFAULT_FLAGS);
+
     fprintf(traceFile->file,
-            "%s{\"pc\": 0x%lx, \"opcode\": {\"value\": %d, \"name\": %s}, "
-            "\"operands\": [",
+            "%s{\"pc\": 0x%lx, \"opcode\": {\"value\": %d, \"name\": \"%s\"}, ",
             traceFile->firstLine ? "" : ",\n", entry.pc,
             (int)entry.opcode, decode_opcode_name((int)entry.opcode));
+
+    if (info.file_available_size > 0) {
+        fprintf(traceFile->file, "\"file\": \"%s\", \"line\": %li, ", file, info.line);
+    }
+
+    fprintf(traceFile->file, "\"operands\": [");
+    module_data_t *mainModule = dr_get_main_module();
+    if (strcmp(module->full_path, mainModule->full_path) == 0) {
+        traceFile->pc = (void *)entry.pc;
+        traceFile->sp = (void *)entry.bp + 0x10;
+    }
+    dr_free_module_data(mainModule);
+    dr_free_module_data(module);
 
     traceFile->firstLine = false;
 
@@ -79,7 +117,6 @@ void writeTraceEntry(json_trace_t *traceFile, trace_entry_t entry) {
         }
 
         writeOpnd(traceFile, entry.vals[i]);
-
     }
 
     fprintf(traceFile->file, "]}");
@@ -156,12 +193,25 @@ static void writeIndir(json_trace_t *traceFile, indirect_value_t indirVal) {
     fprintf(traceFile->file, "\"offset\": 0x%lx, ", indirVal.disp);
     
     if(indirVal.valNull) {
-        fprintf(traceFile->file, "\"value\": null}");
+        fprintf(traceFile->file, "\"value\": null");
     } else {
         fprintf(traceFile->file,
-                "\"value\": 0x%lx}",
+                "\"value\": 0x%lx",
                 indirVal.val);
     }
+
+    uint64_t addr = indirVal.baseVal + indirVal.disp;
+    if (traceFile->info != NULL) {
+        variable_info_t varInfo = getVariableInfo(traceFile->info,
+            (void *)addr, traceFile->pc, traceFile->segmBase,
+            traceFile->sp);
+        if (varInfo.varName != NULL) {
+            fprintf(traceFile->file, ", \"variable\": ");
+            writeVar(traceFile, varInfo);
+        }
+    }
+
+    fprintf(traceFile->file, "}");
 }
 
 static void writeTarget(json_trace_t *traceFile, call_target_t target) {
@@ -171,4 +221,14 @@ static void writeTarget(json_trace_t *traceFile, call_target_t target) {
 
 static void writeNullOpnd(json_trace_t *traceFile) {
     fprintf(traceFile->file, "{\"type\": null}");
+}
+
+static void writeVar(json_trace_t *traceFile, variable_info_t varInfo) {
+    fprintf(traceFile->file, "{\"name\": \"%s\", \"local\": %s",
+            varInfo.varName, varInfo.isLocal ? "true" : "false");
+
+    if (varInfo.type.name != NULL) {
+        fprintf(traceFile->file, ", \"type\": {\"name\": \"%s\", \"size\": %u}}",
+                varInfo.type.name, varInfo.type.size);
+    }
 }

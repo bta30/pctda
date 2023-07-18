@@ -165,6 +165,9 @@ void insertInstrumentation(void *drcontext, instrlist_t *instrs,
     } else {
         loadPointer(cont, regSegmBase, offset);
 
+        ensureNotUsing(&cont, DR_REG_RBP, DR_REG_RBP);
+        storeReg(cont, DR_REG_RBP, offsetof(trace_entry_t, bp));
+
         savePC(cont);
         saveOpcode(cont);
         saveOperands(&cont);
@@ -443,15 +446,18 @@ static void saveDirCall(app_pc instrAddr, app_pc targetAddr) {
     trace_entry_t *entry = *(trace_entry_t **)(threadData->segmBase + offset);
 
     entry->pc = (uint64_t)instrAddr;
+    entry->bp = 0;
 
     instr_t instr;
+    instr_init(drcontext, &instr);
     decode(drcontext, instrAddr, &instr);
     entry->opcode = instr_get_opcode(&instr);
+    instr_free(drcontext, &instr);
     entry->numVals = 1;
 
     entry->vals[0].type = target;
     createTargetOpnd(targetAddr, &entry->vals[0].val.target);
-
+    
     (*(trace_entry_t**)(threadData->segmBase + offset))++;
 }
 
@@ -459,16 +465,24 @@ static void createTargetOpnd(app_pc targetAddr, call_target_t *target) {
     target->pc = (uint64_t)targetAddr;
 
     module_data_t *module = dr_lookup_module(targetAddr);
-                                                                                                               
+ 
     drsym_info_t info;
     info.struct_size = sizeof(info);
-                                                                                                               
     info.name = target->name;
-    info.name_size = sizeof(target->name)/sizeof(target->name[0]);
+    info.name_size = sizeof(target->name);
     target->name[0] = '\0';
-                                                                                                               
+
+    char file[64];
+    info.file = file;
+    info.file_size = 64;
+ 
     drsym_error_t symErr;
     symErr = drsym_lookup_address(module->full_path,
                                   targetAddr - module->start, &info,
                                   DRSYM_DEMANGLE);
+
+    void *drcontext = dr_get_current_drcontext();
+    dr_mcontext_t mc;
+    dr_get_mcontext(drcontext, &mc);
+    target->sp = (void *)reg_get_value(DR_REG_RSP, &mc);
 }

@@ -1,9 +1,13 @@
 #include "dr_api.h"
 #include "drmgr.h"
+#include "drsyms.h"
 
 #include "trace_entry.h"
 #include "insert_instrumentation.h"
 #include "json_writer.h"
+#include "debug_info.h"
+
+#include <string.h>
 
 #define BUF_SIZE (1024 * sizeof(trace_entry_t))
 
@@ -61,6 +65,7 @@ static void outputInstr(void *drcontext);
 
 DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])  {
     drmgr_init();
+    drsym_init(0);
     instrContextInit();
 
     dr_register_exit_event(eventExit);
@@ -72,7 +77,6 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])  {
 
     tlsSlot = drmgr_register_tls_field();
     dr_raw_tls_calloc(&regSegmBase, &offset, 1, 0);
-
 }
 
 static void eventExit(void) {
@@ -86,6 +90,7 @@ static void eventExit(void) {
     drmgr_unregister_module_load_event(eventModuleLoad);
 
     instrContextDeinit();
+    drsym_exit();
     drmgr_exit();
 }
 

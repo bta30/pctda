@@ -27,7 +27,14 @@ This performs a trace of a given executable, generating log files for each threa
     - General purpose register operands (register name and value)
     - Immediate operands (value)
     - Absolute memory address operands (near/far, address, value)
-    - *Sometimes* relative memory address operands (near/far, base register name/value, displacement, value)
+    - Relative memory address operands (near/far, base register name/value, displacement, value)
+  - Debugging information
+    - Variables (name, type, size, local/global)
+    - Functions (on call)
+    - Source file and line for each instruction
+
+To get debugging information, the traced executable must be compiled with no optimisation and maximum DWARF4 debug information.
+In GCC, this is flags `-O0 -g3 -gdwarf-4`.
 
 To build and execute using the given example program, using `drrun` as in your DynamoRIO installation, perform:
 ```
@@ -38,3 +45,6 @@ cmake ..
 make
 drrun -c libjsontracer.so -- ../../sum_program/sum 2 ../../sum_program/table*
 ```
+
+## Dependencies
+The code tracer requires `libdwarf` to be installed at build time
