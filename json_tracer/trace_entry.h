@@ -44,6 +44,7 @@ typedef struct {
 } call_target_t;
 
 typedef struct {
+    uint64_t isSrc;
     uint64_t type;
     union {
         register_value_t reg;

@@ -90,7 +90,7 @@ static value_type_t getType(opnd_t opnd);
 /*
  * Saves values for an operand
  */
-static void saveOpnd(add_instr_context_t *cont, opnd_t opnd, int *numVals);
+static void saveOpnd(add_instr_context_t *cont, opnd_t opnd, int *numVals, int isSrc);
 
 /*
  * Saves a register operand
@@ -254,13 +254,13 @@ static void saveOperands(add_instr_context_t *cont) {
     int srcs = instr_num_srcs(cont->nextInstr);
     for (int i = 0; i < srcs; i++) {
         opnd_t opnd = instr_get_src(cont->nextInstr, i);
-        saveOpnd(cont, opnd, &numVals);
+        saveOpnd(cont, opnd, &numVals, 1);
     }
 
     int dsts = instr_num_dsts(cont->nextInstr);
     for (int i = 0; i < dsts; i++) {
         opnd_t opnd = instr_get_dst(cont->nextInstr, i);
-        saveOpnd(cont, opnd, &numVals);
+        saveOpnd(cont, opnd, &numVals, 0);
     }
 
     loadValueImm(*cont, numVals);
@@ -277,11 +277,16 @@ static value_type_t getType(opnd_t opnd) {
     if (opnd_is_reg(opnd)) return reg;
     else if (opnd_is_immed(opnd)) return imm;
     else if (opnd_is_abs_addr(opnd) && !opnd_is_base_disp(opnd)) return mem;
+    else if (opnd_is_rel_addr(opnd)) return mem;
     else if (opnd_is_base_disp(opnd)) return indir;
     else return unknown;
 }
 
-static void saveOpnd(add_instr_context_t *cont, opnd_t opnd, int *numVals) {
+static void saveOpnd(add_instr_context_t *cont, opnd_t opnd, int *numVals, int isSrc) {
+    // Write if source
+    loadValueImm(*cont, (uint64_t)isSrc);
+    storeValue(*cont, offsetof(trace_entry_t, vals[*numVals].isSrc));
+
     // Write operand type
     value_type_t opndType = getType(opnd);
     loadValueImm(*cont, (uint64_t)opndType);
@@ -343,8 +348,10 @@ static void saveMem(add_instr_context_t *cont, opnd_t opnd, int numVals) {
     storeValue(*cont, offsetof(trace_entry_t, vals[numVals].val.mem.addr));
  
     // Save value 
-    loadValueOpnd(*cont, opnd);
-    storeReg(*cont, cont->regVal, offsetof(trace_entry_t, vals[numVals].val.mem.val));
+    if (!opnd_is_rel_addr(opnd)) {
+        loadValueOpnd(*cont, opnd);
+        storeReg(*cont, cont->regVal, offsetof(trace_entry_t, vals[numVals].val.mem.val));
+    }
 }
 
 static void saveIndir(add_instr_context_t *cont, opnd_t opnd, int numVals) {
@@ -483,6 +490,8 @@ static void createTargetOpnd(app_pc targetAddr, call_target_t *target) {
 
     void *drcontext = dr_get_current_drcontext();
     dr_mcontext_t mc;
+    mc.size = sizeof(mc);
+    mc.flags = DR_MC_ALL;
     dr_get_mcontext(drcontext, &mc);
     target->sp = (void *)reg_get_value(DR_REG_RSP, &mc);
 }

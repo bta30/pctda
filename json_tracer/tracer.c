@@ -9,7 +9,8 @@
 
 #include <string.h>
 
-#define BUF_SIZE (1024 * sizeof(trace_entry_t))
+#define BUF_ENTRIES 1024
+#define BUF_SIZE (BUF_ENTRIES * sizeof(trace_entry_t))
 
 typedef struct {
     byte *segmBase;
@@ -20,6 +21,9 @@ typedef struct {
 reg_id_t regSegmBase;
 uint offset;
 int tlsSlot;
+
+json_trace_t interleavedTrace;
+void *interleavedTraceMutex;
 
 /*
  * Cleans allocated objects
@@ -77,9 +81,15 @@ DR_EXPORT void dr_client_main(client_id_t id, int argc, const char *argv[])  {
 
     tlsSlot = drmgr_register_tls_field();
     dr_raw_tls_calloc(&regSegmBase, &offset, 1, 0);
+
+    interleavedTrace = createTraceFile(1);
+    interleavedTraceMutex = dr_mutex_create();
 }
 
 static void eventExit(void) {
+    dr_mutex_destroy(interleavedTraceMutex);
+    destroyTraceFile(interleavedTrace);
+
     dr_raw_tls_cfree(offset, 1);
 
     drmgr_unregister_tls_field(tlsSlot);
@@ -110,7 +120,7 @@ static void eventThreadInit(void *drcontext) {
     data->buf = dr_raw_mem_alloc(BUF_SIZE, DR_MEMPROT_READ | DR_MEMPROT_WRITE,
                                  NULL);
     *(trace_entry_t **)(data->segmBase + offset) = data->buf;
-    data->traceFile = createTraceFile();
+    data->traceFile = createTraceFile(0);
 }
 
 static void eventThreadExit(void *drcontext) {
@@ -147,9 +157,14 @@ static void outputInstr(void *drcontext) {
     thread_data_t *data = drmgr_get_tls_field(drcontext, tlsSlot);
     trace_entry_t *buf = *(trace_entry_t **)(data->segmBase + offset);
 
+    dr_mutex_lock(interleavedTraceMutex);
     for (trace_entry_t *curr = data->buf; curr < buf; curr++) {
         writeTraceEntry(&data->traceFile, *curr);
+
+        thread_id_t tid = dr_get_thread_id(drcontext);
+        writeInterleavedTraceEntry(&interleavedTrace, tid, *curr);
     }
+    dr_mutex_unlock(interleavedTraceMutex);
 
     *(trace_entry_t **)(data->segmBase + offset) = data->buf;
 }

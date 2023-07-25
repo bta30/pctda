@@ -3,6 +3,7 @@
 
 #include "trace_entry.h"
 #include "debug_info.h"
+#include "dr_api.h"
 
 typedef struct {
     file_t fileHandle;
@@ -16,12 +17,17 @@ typedef struct {
 /*
  * Creates a JSON trace in a unique file
  */
-json_trace_t createTraceFile();
+json_trace_t createTraceFile(int interleaved);
 
 /*
  * Closes the file belonging to a JSON trace
  */
 void destroyTraceFile(json_trace_t traceFile);
+
+/*
+ * Writes a trace entry to an interleaved trace file
+ */
+void writeInterleavedTraceEntry(json_trace_t *traceFile, thread_id_t tid, trace_entry_t entry);
 
 /*
  * Writes a trace entry to the file

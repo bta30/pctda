@@ -38,7 +38,7 @@ variable_info_t getVariableInfo(debug_info_t *info, void *varAddr,
                                 void *pc, void *segmBase, void *sp) {
     pc -= (size_t)segmBase;
     int stackOffset = varAddr - sp;
-    //printf("size  funcs - %i\n", info->sizeFuncs);
+
     for (int i = 0; i < info->sizeFuncs; i++) {
         if (pc < info->funcs[i].lowPC || pc >= info->funcs[i].lowPC + info->funcs[i].length) {
             continue;
@@ -75,5 +75,3 @@ static void ensureLoaded() {
         lib = dr_load_aux_library(libDir, &libStart, &libEnd);
     }
 }
-
-

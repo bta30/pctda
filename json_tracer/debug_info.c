@@ -594,8 +594,8 @@ static int getTypeEntry(dwarf_session_t ses, Dwarf_Die die,
 
         switch (attr) {
         case DW_AT_name:
-            if (getAttributeString(attrs[i], &type->name)) {
-                type->name = NULL;
+            if (type->name == NULL && getAttributeString(attrs[i], &type->name)) {
+                type->name == NULL;
             }
             break;
 
@@ -603,6 +603,23 @@ static int getTypeEntry(dwarf_session_t ses, Dwarf_Die die,
             if (getAttributeUnsigned(attrs[i], &type->size)) {
                 type->size = 0;
             }
+            break;
+
+        case DW_AT_type:
+            Dwarf_Off offsetCU;
+            type_t derefType;
+            if (type->name == NULL &&
+                (getOffsetCU(die, &offsetCU) ||
+                getAttributeType(ses, attrs[i], offsetCU, NULL, &derefType))) {
+
+                type->name = NULL;
+            } else if (type->name == NULL) {
+                int origLen = strlen(derefType.name);
+                type->name = realloc(derefType.name, origLen + 2);
+                type->name[origLen] = '*';
+                type->name[origLen + 1] = '\0';
+            }
+
             break;
         }
 

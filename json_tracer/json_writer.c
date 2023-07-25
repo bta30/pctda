@@ -52,7 +52,7 @@ static void writeNullOpnd(json_trace_t *traceFile);
  */
 static void writeVar(json_trace_t *traceFile, variable_info_t varInfo);
 
-json_trace_t createTraceFile() {
+json_trace_t createTraceFile(int interleaved) {
     json_trace_t traceFile;
     traceFile.fileHandle = getUniqueHandle();
     traceFile.file = fdopen(traceFile.fileHandle, "w");
@@ -78,6 +78,18 @@ void destroyTraceFile(json_trace_t traceFile) {
     }
 }
 
+void writeInterleavedTraceEntry(json_trace_t *traceFile, thread_id_t tid, trace_entry_t entry) {
+    fprintf(traceFile->file,
+            "%s{\"tid\": %i, \"entry\": ",
+            traceFile->firstLine ? "" : ",\n",
+            tid);
+
+    traceFile->firstLine = true;
+    writeTraceEntry(traceFile, entry);
+    traceFile->firstLine = false;
+    fprintf(traceFile->file, "}");
+}
+
 void writeTraceEntry(json_trace_t *traceFile, trace_entry_t entry) {
     module_data_t *module = dr_lookup_module((byte *)entry.pc);
     size_t offset = (void *)entry.pc - (void *)module->start;
@@ -86,17 +98,20 @@ void writeTraceEntry(json_trace_t *traceFile, trace_entry_t entry) {
     char name[512], file[512];
     info.struct_size = sizeof(info);
     info.name = name;
+    info.name_size = sizeof(name);
     info.name_available_size = sizeof(name);
     info.file = file;
     info.file_size = sizeof(file);
-    drsym_lookup_address(module->full_path, offset, &info, DRSYM_DEFAULT_FLAGS);
+    info.file_available_size = sizeof(file);
+    drsym_error_t err;
+    err = drsym_lookup_address(module->full_path, offset, &info, DRSYM_DEFAULT_FLAGS);
 
     fprintf(traceFile->file,
-            "%s{\"pc\": 0x%lx, \"opcode\": {\"value\": %d, \"name\": \"%s\"}, ",
+            "%s{\"pc\": \"0x%lx\", \"opcode\": {\"value\": %d, \"name\": \"%s\"}, ",
             traceFile->firstLine ? "" : ",\n", entry.pc,
             (int)entry.opcode, decode_opcode_name((int)entry.opcode));
 
-    if (info.file_available_size > 0) {
+    if (err == DRSYM_SUCCESS && info.file_available_size > 0 && file[0] == '/') {
         fprintf(traceFile->file, "\"file\": \"%s\", \"line\": %li, ", file, info.line);
     }
 
@@ -128,6 +143,8 @@ static file_t getUniqueHandle() {
 }
 
 static void writeOpnd(json_trace_t *traceFile, operand_value_t opndVal) {
+    fprintf(traceFile->file, "{\"isSrc\": %s", opndVal.isSrc ? "true" : "false");
+
     switch (opndVal.type) {
         case (uint64_t)reg:
             writeReg(traceFile, opndVal.val.reg);
@@ -147,6 +164,7 @@ static void writeOpnd(json_trace_t *traceFile, operand_value_t opndVal) {
 
         case (uint64_t) target:
             writeTarget(traceFile, opndVal.val.target);
+            break;
 
         default:
             writeNullOpnd(traceFile);
@@ -156,51 +174,67 @@ static void writeOpnd(json_trace_t *traceFile, operand_value_t opndVal) {
 
 static void writeReg(json_trace_t *traceFile, register_value_t regVal) {
     fprintf(traceFile->file, 
-            "{\"type\": \"register\", \"name\": \"%s\", \"value\": 0x%lx}",
+            ", \"type\": \"register\", \"name\": \"%s\", \"value\": \"0x%lx\"}",
             (char *)regVal.name,
             regVal.val);
 }
 
 static void writeImm(json_trace_t *traceFile, immediate_value_t immVal) {
     fprintf(traceFile->file,
-            "{\"type\": \"immediate\", \"value\": 0x%lx}",
+            ", \"type\": \"immediate\", \"value\": \"0x%lx\"}",
             immVal.val);
 }
 
 static void writeMem(json_trace_t *traceFile, memory_value_t memVal) {
     fprintf(traceFile->file,
-            "{\"type\": \"memory\", \"distance\": \"%s\", "
-            "\"address\": 0x%lx, \"value\": 0x%lx}",
+            ", \"type\": \"memory\", \"distance\": \"%s\", "
+            "\"address\": \"0x%lx\", \"value\": \"0x%lx\"",
             memVal.isFar ? "far" : "near",
             memVal.addr,
             memVal.val);
+
+    if (traceFile->info != NULL) {
+        variable_info_t varInfo = getVariableInfo(traceFile->info,
+            (void *)memVal.addr, traceFile->pc, traceFile->segmBase,
+            traceFile->sp);
+        if (varInfo.varName != NULL) {
+            fprintf(traceFile->file, ", \"variable\": ");
+            writeVar(traceFile, varInfo);
+        }
+    }
+
+    fprintf(traceFile->file, "}");
 }
 
 static void writeIndir(json_trace_t *traceFile, indirect_value_t indirVal) {
     fprintf(traceFile->file,
-            "{\"type\": \"indirect\", \"distance\": \"%s\", ",
+            ", \"type\": \"indirect\", \"distance\": \"%s\", ",
             indirVal.isFar ? "far" : "near");
 
     if (indirVal.baseNull) {
         fprintf(traceFile->file, "\"base\": null, \"baseValue\": null, ");
+        indirVal.baseVal = 0;
     } else {
         fprintf(traceFile->file,
-                "\"base\": \"%s\", \"baseValue\": 0x%lx, ",
+                "\"base\": \"%s\", \"baseValue\": \"0x%lx\", ",
                 (char *)indirVal.baseName,
                 indirVal.baseVal);
     }
 
-    fprintf(traceFile->file, "\"offset\": 0x%lx, ", indirVal.disp);
+    uint64_t addr = indirVal.baseVal + indirVal.disp;
+    fprintf(traceFile->file,
+            "\"offset\": \"0x%lx\", \"address\":\"0x%lx\", ",
+            indirVal.disp, addr);
     
     if(indirVal.valNull) {
         fprintf(traceFile->file, "\"value\": null");
     } else {
         fprintf(traceFile->file,
-                "\"value\": 0x%lx",
+                "\"value\": \"0x%lx\"",
                 indirVal.val);
     }
 
-    uint64_t addr = indirVal.baseVal + indirVal.disp;
+
     if (traceFile->info != NULL) {
         variable_info_t varInfo = getVariableInfo(traceFile->info,
             (void *)addr, traceFile->pc, traceFile->segmBase,
@@ -215,12 +249,12 @@ static void writeIndir(json_trace_t *traceFile, indirect_value_t indirVal) {
 }
 
 static void writeTarget(json_trace_t *traceFile, call_target_t target) {
-    fprintf(traceFile->file, "{\"type\": \"target\", \"pc\": 0x%lx, "
+    fprintf(traceFile->file, ", \"type\": \"target\", \"pc\": \"0x%lx\", "
             "\"name\": \"%s\"}", target.pc, target.name);
 }
 
 static void writeNullOpnd(json_trace_t *traceFile) {
-    fprintf(traceFile->file, "{\"type\": null}");
+    fprintf(traceFile->file, ", \"type\": null}");
 }
 
 static void writeVar(json_trace_t *traceFile, variable_info_t varInfo) {
